@@ -7155,6 +7155,61 @@ out:
     return r;
 }
 
+int main_sched_arinc653(int argc, char **argv)
+{
+    const char *dom = NULL;
+    bool primary = true;
+    bool opt_t = false;
+    int opt, rc;
+    static struct option opts[] = {
+        {"domain", 1, 0, 'd'},
+        {"type", 1, 0, 't'},
+        COMMON_LONG_OPTS
+    };
+
+    SWITCH_FOREACH_OPT(opt, "d:t:", opts, "sched-arinc653", 0) {
+    case 'd':
+        dom = optarg;
+        break;
+    case 't':
+        if (!strncmp(optarg, "primary", 8)) {
+            primary = true;
+        }
+        else if (!strncmp(optarg, "backup", 7)) {
+            primary= false;
+        }
+        else {
+            fprintf(stderr, "Invalid domain type argument.\n");
+            return EXIT_FAILURE;
+        }
+
+        opt_t = true;
+        break;
+    }
+
+    if (!dom && opt_t) {
+        fprintf(stderr, "Must specify a domain.\n");
+        return EXIT_FAILURE;
+    }
+
+    if (!dom) { /* TODO: list all domain's credit scheduler info */
+    }
+    else {
+        uint32_t domid = find_domain(dom);
+
+        libxl_domain_sched_params scinfo;
+        libxl_domain_sched_params_init(&scinfo);
+        scinfo.sched = LIBXL_SCHEDULER_ARINC653;
+        if (opt_t)
+            scinfo.primary = primary;
+        rc = sched_domain_set(domid, &scinfo);
+        libxl_domain_sched_params_dispose(&scinfo);
+        if (rc)
+            return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
+
 int main_domid(int argc, char **argv)
 {
     uint32_t domid;

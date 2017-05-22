@@ -279,6 +279,13 @@ struct cmd_spec cmd_table[] = {
       "-p PERIOD, --period=PERIOD     Period (us)\n"
       "-b BUDGET, --budget=BUDGET     Budget (us)\n"
     },
+    { "sched-arinc653",
+      &main_sched_arinc653, 0, 1,
+      "Get/set arinc653 scheduler parameters",
+      "[-d <Domain> [-t[=primary/backup]]]",
+      "-d DOMAIN,     --domain=DOMAIN             Domain to modify\n"
+      "-t             --type=TYPE                 Mark domain as primary/backup\n"
+    },
     { "domid",
       &main_domid, 0, 0,
       "Convert a domain name to domain id",

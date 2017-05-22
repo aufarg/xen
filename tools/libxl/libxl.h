@@ -2016,6 +2016,7 @@ int libxl_sched_credit2_params_set(libxl_ctx *ctx, uint32_t poolid,
 #define LIBXL_DOMAIN_SCHED_PARAM_LATENCY_DEFAULT   -1
 #define LIBXL_DOMAIN_SCHED_PARAM_EXTRATIME_DEFAULT -1
 #define LIBXL_DOMAIN_SCHED_PARAM_BUDGET_DEFAULT    -1
+#define LIBXL_DOMAIN_SCHED_PARAM_PRIMARY_DEFAULT   true
 
 /* Per-VCPU parameters */
 #define LIBXL_SCHED_PARAM_VCPU_INDEX_DEFAULT   -1

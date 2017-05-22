@@ -5195,9 +5195,13 @@ int libxl_get_scheduler(libxl_ctx *ctx)
 static int sched_arinc653_domain_set(libxl__gc *gc, uint32_t domid,
                                      const libxl_domain_sched_params *scinfo)
 {
-    /* Currently, the ARINC 653 scheduler does not take any domain-specific
-         configuration, so we simply return success. */
-    return 0;
+    struct xen_domctl_sched_arinc653 sdom;
+    int rc;
+
+    sdom.primary = scinfo->primary;
+    rc = xc_sched_arinc653_domain_set(CTX->xch, domid, &sdom);
+
+    return rc;
 }
 
 static int sched_credit_domain_get(libxl__gc *gc, uint32_t domid,
