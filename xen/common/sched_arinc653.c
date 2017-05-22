@@ -61,6 +61,11 @@
  */
 #define SCHED_PRIV(s) ((a653sched_priv_t *)((s)->sched_data))
 
+/**
+ * Return the domain specific private data given the domain pointer
+ */
+#define DOM_PRIV(d) ((a653sched_domain_t *)((d)->sched_priv))
+
 /**************************************************************************
  * Private Type Definitions                                               *
  **************************************************************************/
@@ -144,6 +149,10 @@ typedef struct a653sched_priv_s
      */
     struct list_head vcpu_list;
 } a653sched_priv_t;
+
+typedef struct a653sched_domain_s {
+    bool_t primary;
+} a653sched_domain_t;
 
 /**************************************************************************
  * Helper functions                                                       *
@@ -723,6 +732,46 @@ a653sched_adjust_global(const struct scheduler *ops,
     return rc;
 }
 
+static int
+a653sched_init_domain(const struct scheduler *ops,
+                     struct domain *dom)
+{
+    a653sched_domain_t *sdom;
+
+    sdom = xzalloc(a653sched_domain_t);
+    if ( sdom == NULL )
+        return -ENOMEM;
+
+    /* initialize scheduler-specific domain data */
+    sdom->primary = true;
+
+    dom->sched_priv = sdom;
+
+    return 0;
+}
+
+static void
+a653sched_destroy_domain(const struct scheduler *ops, struct domain *dom)
+{
+    xfree(dom->sched_priv);
+}
+
+static int
+a653sched_adjust_domain(const struct scheduler *ops, struct domain *d,
+                        struct xen_domctl_scheduler_op *op)
+{
+    a653sched_domain_t * const sdom = DOM_PRIV(d);
+
+    switch (op->cmd) {
+    case XEN_DOMCTL_SCHEDOP_putinfo:
+        sdom->primary = op->u.arinc653.primary;
+        break;
+    case XEN_DOMCTL_SCHEDOP_getinfo:
+        break;
+    }
+
+    return 0;
+}
 /**
  * This structure defines our scheduler for Xen.
  * The entries tell Xen where to find our scheduler-specific
@@ -744,8 +793,8 @@ static const struct scheduler sched_arinc653_def = {
     .free_domdata   = a653sched_free_domdata,
     .alloc_domdata  = a653sched_alloc_domdata,
 
-    .init_domain    = NULL,
-    .destroy_domain = NULL,
+    .init_domain    = a653sched_init_domain,
+    .destroy_domain = a653sched_destroy_domain,
 
     .insert_vcpu    = NULL,
     .remove_vcpu    = NULL,
@@ -761,7 +810,7 @@ static const struct scheduler sched_arinc653_def = {
 
     .switch_sched   = a653_switch_sched,
 
-    .adjust         = NULL,
+    .adjust         = a653sched_adjust_domain,
     .adjust_global  = a653sched_adjust_global,
 
     .dump_settings  = NULL,
