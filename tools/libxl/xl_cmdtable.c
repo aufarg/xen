@@ -282,9 +282,9 @@ struct cmd_spec cmd_table[] = {
     { "sched-arinc653",
       &main_sched_arinc653, 0, 1,
       "Get/set arinc653 scheduler parameters",
-      "[-d <Domain> [-t[=primary/backup]]]",
+      "[-d <Domain> [-p <Domain>]]",
       "-d DOMAIN,     --domain=DOMAIN             Domain to modify\n"
-      "-t             --type=TYPE                 Mark domain as primary/backup\n"
+      "-p             --parent=DOMAIN             Specify parent domain\n"
     },
     { "domid",
       &main_domid, 0, 0,

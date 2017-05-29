@@ -7158,36 +7158,26 @@ out:
 int main_sched_arinc653(int argc, char **argv)
 {
     const char *dom = NULL;
-    bool primary = true;
-    bool opt_t = false;
+    const char *par = NULL;
+    bool opt_p = false;
     int opt, rc;
     static struct option opts[] = {
         {"domain", 1, 0, 'd'},
-        {"type", 1, 0, 't'},
+        {"parent", 1, 0, 'p'},
         COMMON_LONG_OPTS
     };
 
-    SWITCH_FOREACH_OPT(opt, "d:t:", opts, "sched-arinc653", 0) {
+    SWITCH_FOREACH_OPT(opt, "d:p:", opts, "sched-arinc653", 0) {
     case 'd':
         dom = optarg;
         break;
-    case 't':
-        if (!strncmp(optarg, "primary", 8)) {
-            primary = true;
-        }
-        else if (!strncmp(optarg, "backup", 7)) {
-            primary= false;
-        }
-        else {
-            fprintf(stderr, "Invalid domain type argument.\n");
-            return EXIT_FAILURE;
-        }
-
-        opt_t = true;
+    case 'p':
+        par = optarg;
+        opt_p = true;
         break;
     }
 
-    if (!dom && opt_t) {
+    if (!dom && opt_p) {
         fprintf(stderr, "Must specify a domain.\n");
         return EXIT_FAILURE;
     }
@@ -7196,16 +7186,31 @@ int main_sched_arinc653(int argc, char **argv)
     }
     else {
         uint32_t domid = find_domain(dom);
-
         libxl_domain_sched_params scinfo;
-        libxl_domain_sched_params_init(&scinfo);
-        scinfo.sched = LIBXL_SCHEDULER_ARINC653;
-        if (opt_t)
-            scinfo.primary = primary;
-        rc = sched_domain_set(domid, &scinfo);
-        libxl_domain_sched_params_dispose(&scinfo);
-        if (rc)
-            return EXIT_FAILURE;
+
+        if (!opt_p) {
+            rc = sched_domain_get(LIBXL_SCHEDULER_ARINC653, domid, &scinfo);
+            if (rc)
+                return EXIT_FAILURE;
+            printf("domain [%d] parent is domain [%d]\n", domid, scinfo.parent);
+        }
+        else {
+            uint32_t parid = find_domain(par);
+
+            if (domid == parid) {
+                fprintf(stderr, "Cannot become backup of self.\n");
+                return EXIT_FAILURE;
+            }
+
+            libxl_domain_sched_params_init(&scinfo);
+            scinfo.sched = LIBXL_SCHEDULER_ARINC653;
+            scinfo.parent = parid;
+
+            rc = sched_domain_set(domid, &scinfo);
+            libxl_domain_sched_params_dispose(&scinfo);
+            if (rc)
+                return EXIT_FAILURE;
+        }
     }
     return EXIT_SUCCESS;
 }

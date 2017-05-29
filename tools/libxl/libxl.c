@@ -5192,13 +5192,28 @@ int libxl_get_scheduler(libxl_ctx *ctx)
     return sched;
 }
 
+static int sched_arinc653_domain_get(libxl__gc *gc, uint32_t domid,
+                                   libxl_domain_sched_params *scinfo)
+{
+    struct xen_domctl_sched_arinc653 sdom;
+    int rc;
+
+    rc = xc_sched_arinc653_domain_get(CTX->xch, domid, &sdom);
+
+    libxl_domain_sched_params_init(scinfo);
+    scinfo->sched = LIBXL_SCHEDULER_ARINC653;
+    scinfo->parent = sdom.parent;
+
+    return rc;
+}
+
 static int sched_arinc653_domain_set(libxl__gc *gc, uint32_t domid,
                                      const libxl_domain_sched_params *scinfo)
 {
     struct xen_domctl_sched_arinc653 sdom;
     int rc;
 
-    sdom.primary = scinfo->primary;
+    sdom.parent = scinfo->parent;
     rc = xc_sched_arinc653_domain_set(CTX->xch, domid, &sdom);
 
     return rc;
@@ -5221,7 +5236,7 @@ static int sched_credit_domain_get(libxl__gc *gc, uint32_t domid,
     scinfo->weight = sdom.weight;
     scinfo->cap = sdom.cap;
 
-    return 0;
+    return rc;
 }
 
 static int sched_credit_domain_set(libxl__gc *gc, uint32_t domid,
@@ -5858,6 +5873,9 @@ int libxl_domain_sched_params_get(libxl_ctx *ctx, uint32_t domid,
         break;
     case LIBXL_SCHEDULER_RTDS:
         ret=sched_rtds_domain_get(gc, domid, scinfo);
+        break;
+    case LIBXL_SCHEDULER_ARINC653:
+        ret=sched_arinc653_domain_get(gc, domid, scinfo);
         break;
     default:
         LOG(ERROR, "Unknown scheduler");
