@@ -5203,6 +5203,7 @@ static int sched_arinc653_domain_get(libxl__gc *gc, uint32_t domid,
     libxl_domain_sched_params_init(scinfo);
     scinfo->sched = LIBXL_SCHEDULER_ARINC653;
     scinfo->parent = sdom.parent;
+    scinfo->healthy = sdom.healthy;
 
     return rc;
 }
@@ -5214,6 +5215,7 @@ static int sched_arinc653_domain_set(libxl__gc *gc, uint32_t domid,
     int rc;
 
     sdom.parent = scinfo->parent;
+    sdom.healthy = scinfo->healthy;
     rc = xc_sched_arinc653_domain_set(CTX->xch, domid, &sdom);
 
     return rc;

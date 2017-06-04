@@ -152,6 +152,7 @@ typedef struct a653sched_priv_s
 
 typedef struct a653sched_domain_s {
     domid_t parent;
+    bool healthy;
 } a653sched_domain_t;
 
 /**************************************************************************
@@ -744,6 +745,7 @@ a653sched_init_domain(const struct scheduler *ops,
 
     /* initialize scheduler-specific domain data */
     sdom->parent = 0;
+    sdom->healthy = true;
 
     dom->sched_priv = sdom;
 
@@ -768,11 +770,13 @@ a653sched_adjust_domain(const struct scheduler *ops, struct domain *d,
     case XEN_DOMCTL_SCHEDOP_putinfo:
         spin_lock_irqsave(&sched_priv->lock, flags);
         sdom->parent = op->u.arinc653.parent;
+        sdom->healthy = op->u.arinc653.healthy;
         spin_unlock_irqrestore(&sched_priv->lock, flags);
         break;
     case XEN_DOMCTL_SCHEDOP_getinfo:
         spin_lock_irqsave(&sched_priv->lock, flags);
         op->u.arinc653.parent = sdom->parent;
+        op->u.arinc653.healthy = sdom->healthy;
         spin_unlock_irqrestore(&sched_priv->lock, flags);
         break;
     }

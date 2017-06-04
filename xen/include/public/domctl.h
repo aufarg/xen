@@ -369,6 +369,7 @@ typedef struct xen_domctl_sched_rtds {
 
 typedef struct xen_domctl_sched_arinc653 {
     domid_t parent;
+    uint8_t healthy;
 } xen_domctl_sched_arinc653_t;
 
 typedef struct xen_domctl_schedparam_vcpu {

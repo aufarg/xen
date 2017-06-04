@@ -7187,12 +7187,15 @@ int main_sched_arinc653(int argc, char **argv)
     else {
         uint32_t domid = find_domain(dom);
         libxl_domain_sched_params scinfo;
+        libxl_domain_sched_params_init(&scinfo);
+
+        rc = sched_domain_get(LIBXL_SCHEDULER_ARINC653, domid, &scinfo);
+        if (rc)
+            return EXIT_FAILURE;
 
         if (!opt_p) {
-            rc = sched_domain_get(LIBXL_SCHEDULER_ARINC653, domid, &scinfo);
-            if (rc)
-                return EXIT_FAILURE;
-            printf("domain [%d] parent is domain [%d]\n", domid, scinfo.parent);
+            printf("domain [%d] parent is domain [%d] and is %s\n",
+                    domid, scinfo.parent, (scinfo.healthy) ? "OK" : "Failed");
         }
         else {
             uint32_t parid = find_domain(par);
@@ -7201,9 +7204,6 @@ int main_sched_arinc653(int argc, char **argv)
                 fprintf(stderr, "Cannot become backup of self.\n");
                 return EXIT_FAILURE;
             }
-
-            libxl_domain_sched_params_init(&scinfo);
-            scinfo.sched = LIBXL_SCHEDULER_ARINC653;
             scinfo.parent = parid;
 
             rc = sched_domain_set(domid, &scinfo);
