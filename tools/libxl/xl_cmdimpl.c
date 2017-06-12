@@ -7159,17 +7159,24 @@ int main_sched_arinc653(int argc, char **argv)
 {
     const char *dom = NULL;
     const char *par = NULL;
+    const char *status = NULL;
     bool opt_p = false;
+    bool opt_s = false;
     int opt, rc;
     static struct option opts[] = {
         {"domain", 1, 0, 'd'},
         {"parent", 1, 0, 'p'},
+        {"status", 1, 0, 's'},
         COMMON_LONG_OPTS
     };
 
-    SWITCH_FOREACH_OPT(opt, "d:p:", opts, "sched-arinc653", 0) {
+    SWITCH_FOREACH_OPT(opt, "d:s:p:", opts, "sched-arinc653", 0) {
     case 'd':
         dom = optarg;
+        break;
+    case 's':
+        status = optarg;
+        opt_s = true;
         break;
     case 'p':
         par = optarg;
@@ -7177,8 +7184,13 @@ int main_sched_arinc653(int argc, char **argv)
         break;
     }
 
-    if (!dom && opt_p) {
+    if (!dom) {
         fprintf(stderr, "Must specify a domain.\n");
+        return EXIT_FAILURE;
+    }
+
+    if (opt_p && opt_s) {
+        fprintf(stderr, "Cannot set health and parent of a domain together.\n");
         return EXIT_FAILURE;
     }
 
@@ -7193,18 +7205,35 @@ int main_sched_arinc653(int argc, char **argv)
         if (rc)
             return EXIT_FAILURE;
 
-        if (!opt_p) {
+        if (!opt_p && !opt_s) {
             printf("domain [%d] parent is domain [%d] and is %s\n",
                     domid, scinfo.parent, (scinfo.healthy) ? "OK" : "Failed");
         }
-        else {
+        else if (opt_p) {
             uint32_t parid = find_domain(par);
 
-            if (domid == parid) {
-                fprintf(stderr, "Cannot become backup of self.\n");
+            scinfo.parent = parid;
+
+            rc = sched_domain_set(domid, &scinfo);
+            libxl_domain_sched_params_dispose(&scinfo);
+            if (rc)
+                return EXIT_FAILURE;
+        }
+        else if (opt_s) {
+            bool healthy;
+
+            if (!strcmp(status,"ok")) {
+                healthy = true;
+            }
+            else if (!strcmp(status,"fail")) {
+                healthy = false;
+            }
+            else {
+                fprintf(stderr, "Unknown condition: %s.\n", status);
                 return EXIT_FAILURE;
             }
-            scinfo.parent = parid;
+
+            scinfo.healthy = healthy;
 
             rc = sched_domain_set(domid, &scinfo);
             libxl_domain_sched_params_dispose(&scinfo);

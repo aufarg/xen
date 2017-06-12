@@ -5214,7 +5214,14 @@ static int sched_arinc653_domain_set(libxl__gc *gc, uint32_t domid,
     struct xen_domctl_sched_arinc653 sdom;
     int rc;
 
-    sdom.parent = scinfo->parent;
+    rc = xc_sched_arinc653_domain_get(CTX->xch, domid, &sdom);
+    if (rc != 0) {
+        LOGE(ERROR, "getting domain sched arinc653");
+        return ERROR_FAIL;
+    }
+
+    if (scinfo->parent != LIBXL_DOMAIN_SCHED_PARAM_PARENT_DEFAULT)
+        sdom.parent = scinfo->parent;
     sdom.healthy = scinfo->healthy;
     rc = xc_sched_arinc653_domain_set(CTX->xch, domid, &sdom);
 
