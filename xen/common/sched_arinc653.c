@@ -575,11 +575,6 @@ a653sched_do_schedule(
     {
         /* When switching domain, the dom_priv should point to current domain private data structure */
         BUG_ON(dom_priv == NULL);
-        /* printk("entry [%d]: parent = %d | health = %s | primary = %s\n", */
-        /*         sched_index, dom_priv->parent, */
-        /*         (dom_priv->healthy) ? "healthy" : "not healthy", */
-        /*         (dom_priv->primary) ? "primary" : "backup"); */
-        /* while ( (now >= next_switch_time) */
 
         /* if last task elapsed, mark task  as done */
         if ( now >= next_switch_time) 
@@ -592,7 +587,6 @@ a653sched_do_schedule(
         {
             /* time to switch to the next domain in this major frame */
             sched_index++;
-            /* next_switch_time += sched_priv->schedule[sched_index].runtime; */
             if (sched_index < sched_priv->num_schedule_entries) {
                 dom_priv = DOM_PRIV(sched_priv->schedule[sched_index].vc->domain);
                 if (!task_done[dom_priv->parent])
