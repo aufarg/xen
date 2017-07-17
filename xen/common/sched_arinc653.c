@@ -64,7 +64,7 @@
 /**
  * Return the domain specific private data given the domain pointer
  */
-#define DOM_PRIV(d) ((a653sched_domain_t *)((d)->sched_priv))
+#define DOM_PRIV(d) ((a653sched_domain_t *)((d) ? (d)->sched_priv : NULL))
 
 /**************************************************************************
  * Private Type Definitions                                               *
@@ -552,8 +552,9 @@ a653sched_do_schedule(
     static s_time_t next_switch_time;
     a653sched_priv_t *sched_priv = SCHED_PRIV(ops);
     const unsigned int cpu = smp_processor_id();
-    static bool task_done[ARINC653_MAX_DOMAINS_PER_SCHEDULE] = {0};
-    static a653sched_domain_t * dom_priv = NULL;
+    static bool task_done[ARINC653_MAX_DOMAINS_PER_SCHEDULE] = {0}; /* task flags */
+    static a653sched_domain_t * current_domain;
+    static domid_t current_parent;
     unsigned long flags;
 
     spin_lock_irqsave(&sched_priv->lock, flags);
@@ -568,30 +569,48 @@ a653sched_do_schedule(
         sched_index = 0;
         sched_priv->next_major_frame = now + sched_priv->major_frame;
         next_switch_time = now + sched_priv->schedule[0].runtime;
-        dom_priv = DOM_PRIV(sched_priv->schedule[0].vc->domain);
+        current_domain = DOM_PRIV(sched_priv->schedule[0].vc->domain);
+        current_parent = current_domain->parent;
+
+        /* (re)initialize task flags */
         memset(task_done, 0, sizeof(task_done));
     }
     else
     {
-        /* When switching domain, the dom_priv should point to current domain private data structure */
-        BUG_ON(dom_priv == NULL);
+        /* if last task elapsed, mark task as done */
+        if ( now >= next_switch_time )
+            task_done[current_parent] = true;
 
-        /* if last task elapsed, mark task  as done */
-        if ( now >= next_switch_time) 
-            task_done[dom_priv->parent] = true;
-
-        while ( ( (now >= next_switch_time)
-                || (!dom_priv->healthy)
-                || (task_done[dom_priv->parent]) )
+        while ( (now >= next_switch_time)
                 && (sched_index < sched_priv->num_schedule_entries) )
         {
+            const struct vcpu * vc;
+
             /* time to switch to the next domain in this major frame */
             sched_index++;
-            if (sched_index < sched_priv->num_schedule_entries) {
-                dom_priv = DOM_PRIV(sched_priv->schedule[sched_index].vc->domain);
-                if (!task_done[dom_priv->parent])
-                    next_switch_time += sched_priv->schedule[sched_index].runtime;
-            }
+
+            vc = sched_priv->schedule[sched_index].vc;
+
+            /* Current schedule should point to a valid VCPU structure */
+            if (vc == NULL)
+                continue;
+
+            current_domain = DOM_PRIV(vc->domain);
+
+            /* Skip if this domain is deleted */
+            if (current_domain == NULL)
+                continue;
+
+            /* Skip if this domain is not healthy or its predecessor have run */
+            if (!current_domain->healthy || task_done[current_domain->parent])
+                continue;
+
+            /* Select current schedule entry */
+            next_switch_time += sched_priv->schedule[sched_index].runtime;
+            current_parent = current_domain->parent;
+
+            /* if we've got this far, break */
+            break;
         }
     }
 
@@ -775,41 +794,9 @@ a653sched_init_domain(const struct scheduler *ops,
 static void
 a653sched_destroy_domain(const struct scheduler *ops, struct domain *dom)
 {
+    dom->sched_priv = NULL;
+
     xfree(dom->sched_priv);
-}
-
-static void
-a653sched_sort_schedule(a653sched_priv_t * sched_priv)
-{
-    unsigned int i, j;
-    for ( i = 0; i < sched_priv->num_schedule_entries; i++ )
-    {
-        for ( j = 1; j < sched_priv->num_schedule_entries; j++ )
-        {
-            sched_entry_t * entry_a = &sched_priv->schedule[j-1];
-            sched_entry_t * entry_b = &sched_priv->schedule[j];
-            a653sched_domain_t * dom_priv_a = DOM_PRIV(entry_a->vc->domain);
-            a653sched_domain_t * dom_priv_b = DOM_PRIV(entry_b->vc->domain);
-
-            if ( dom_priv_b->parent < dom_priv_a->parent
-                || (dom_priv_a->parent == dom_priv_b->parent && dom_priv_b->primary) )
-            {
-                sched_entry_t entry_tmp;
-
-                entry_tmp = *entry_a;
-                *entry_a = *entry_b;
-                *entry_b = entry_tmp;
-            }
-        }
-    }
-    for ( i = 0; i < sched_priv->num_schedule_entries; i++ )
-    {
-        sched_entry_t * entry = &sched_priv->schedule[i];
-        a653sched_domain_t * dom_priv = DOM_PRIV(entry->vc->domain);
-
-        printk("entry [%d]: id = %d | parent = %d | primary = %s\n",
-                i, entry->vc->domain->domain_id, dom_priv->parent, (dom_priv->primary) ? "primary" : "backup");
-    }
 }
 
 static int
@@ -835,7 +822,6 @@ a653sched_adjust_domain(const struct scheduler *ops, struct domain *d,
         sdom->healthy = op->u.arinc653.healthy;
         printk("health argument for domain[%d]: %d\n", d->domain_id, op->u.arinc653.healthy);
         printk("health for domain[%d]: %s\n", d->domain_id, (sdom->healthy) ? "healthy" : "not healthy");
-        a653sched_sort_schedule(sched_priv);
         break;
     case XEN_DOMCTL_SCHEDOP_getinfo:
         op->u.arinc653.parent = sdom->parent;
