@@ -480,7 +480,15 @@ static void *
 a653sched_alloc_domdata(const struct scheduler *ops, struct domain *dom)
 {
     /* return a non-NULL value to keep schedule.c happy */
-    return SCHED_PRIV(ops);
+    sdom = xzalloc(a653sched_domain_t);
+    if ( sdom == NULL )
+        return -ENOMEM;
+
+    sdom->parent = dom->domain_id;
+    sdom->primary = true;
+    sdom->healthy = true;
+
+    return sdom;
 }
 
 /**
@@ -491,7 +499,9 @@ a653sched_alloc_domdata(const struct scheduler *ops, struct domain *dom)
 static void
 a653sched_free_domdata(const struct scheduler *ops, void *data)
 {
-    /* nop */
+    dom->sched_priv = NULL;
+
+    xfree(dom->sched_priv);
 }
 
 /**
@@ -777,15 +787,7 @@ a653sched_init_domain(const struct scheduler *ops,
     a653sched_domain_t *sdom;
 
     printk("New domain [%d]\n", dom->domain_id);
-    sdom = xzalloc(a653sched_domain_t);
-    if ( sdom == NULL )
-        return -ENOMEM;
-
-    /* initialize scheduler-specific domain data */
-    sdom->parent = dom->domain_id;
-    sdom->primary = true;
-    sdom->healthy = true;
-
+    sdom = a653sched_alloc_domdata(ops, dom);
     dom->sched_priv = sdom;
 
     return 0;
@@ -794,9 +796,7 @@ a653sched_init_domain(const struct scheduler *ops,
 static void
 a653sched_destroy_domain(const struct scheduler *ops, struct domain *dom)
 {
-    dom->sched_priv = NULL;
-
-    xfree(dom->sched_priv);
+    a653sched_free_domdata(ops, dom);
 }
 
 static int
