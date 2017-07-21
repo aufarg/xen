@@ -595,7 +595,8 @@ DEFINE_XEN_GUEST_HANDLE(xen_sysctl_cpupool_op_t);
  * all the operations.
  */
 
-#define ARINC653_MAX_DOMAINS_PER_SCHEDULE   64
+#define ARINC653_MAX_DOMAINS_PER_SERVICE     64
+#define ARINC653_MAX_SERVICES_PER_SCHEDULE   64
 /*
  * This structure is used to pass a new ARINC653 schedule from a
  * privileged domain (ie dom0) to Xen.
@@ -609,16 +610,25 @@ struct xen_sysctl_arinc653_schedule {
     uint8_t     num_sched_entries;
     /* The sched_entries array holds the actual schedule entries. */
     struct {
-        /* dom_handle must match a domain's UUID */
-        xen_domain_handle_t dom_handle;
-        /* If a domain has multiple VCPUs, vcpu_id specifies which one
-         * this schedule entry applies to. It should be set to 0 if
-         * there is only one VCPU for the domain. */
-        unsigned int vcpu_id;
+        /* service_id is the identification of the service that
+         * should be provided in this particular time slot. */
+        int service_id;
         /* runtime specifies the amount of time that should be allocated
-         * to this VCPU per major frame. It is specified in nanoseconds */
+         * to this VCPU per major frame. It is specified in nanoseconds. */
         uint64_aligned_t runtime;
-    } sched_entries[ARINC653_MAX_DOMAINS_PER_SCHEDULE];
+        /* num_provides holds how many of the providers in the
+         * service_providers[] array are valid. */
+        uint8_t num_providers;
+        /* The providers holds domains information which provide this service */
+        struct {
+            /* dom_handle must match a domain's UUID */
+            xen_domain_handle_t dom_handle;
+            /* If a domain has multiple VCPUs, vcpu_id specifies which one
+             * this schedule entry applies to. It should be set to 0 if
+             * there is only one VCPU for the domain. */
+            unsigned int vcpu_id;
+        } service_providers[ARINC653_MAX_DOMAINS_PER_SERVICE];
+    } sched_entries[ARINC653_MAX_SERVICES_PER_SCHEDULE];
 };
 typedef struct xen_sysctl_arinc653_schedule xen_sysctl_arinc653_schedule_t;
 DEFINE_XEN_GUEST_HANDLE(xen_sysctl_arinc653_schedule_t);

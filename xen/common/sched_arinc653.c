@@ -87,10 +87,10 @@ typedef struct arinc653_vcpu_s
 } arinc653_vcpu_t;
 
 /**
- * The sched_entry_t structure holds a single entry of the
- * ARINC 653 schedule.
+ * The sched_providers_t structure holds information about a particular
+ * domain and its corresponding VCPU.
  */
-typedef struct sched_entry_s
+typedef struct sched_providers_s
 {
     /* dom_handle holds the handle ("UUID") for the domain that this
      * schedule entry refers to. */
@@ -98,11 +98,29 @@ typedef struct sched_entry_s
     /* vcpu_id holds the VCPU number for the VCPU that this schedule
      * entry refers to. */
     int                 vcpu_id;
-    /* runtime holds the number of nanoseconds that the VCPU for this
-     * schedule entry should be allowed to run per major frame. */
-    s_time_t            runtime;
     /* vc holds a pointer to the Xen VCPU structure */
     struct vcpu *       vc;
+} sched_providers_t;
+
+/**
+ * The sched_entry_t structure holds a single entry of the
+ * ARINC 653 schedule.
+ */
+typedef struct sched_entry_s
+{
+    /* service_id holds the service identification this partical entry
+     * should provide */
+    int service_id;
+    /* runtime holds the number of nanoseconds that the VCPU for this
+     * schedule entry should be allowed to run per major frame. */
+    s_time_t runtime;
+
+    /* This variable holds the number of entries that are valid in
+     * the providers[] array.
+     */
+    unsigned int num_providers;
+    /* providers holds list of domains which provides this service */
+    sched_providers_t providers[ARINC653_MAX_DOMAINS_PER_SERVICE];
 } sched_entry_t;
 
 /**
@@ -121,7 +139,7 @@ typedef struct a653sched_priv_s
      * and VCPU number match, then the VCPU is allowed to run. Its run time
      * (per major frame) is given in the third entry of the schedule.
      */
-    sched_entry_t schedule[ARINC653_MAX_DOMAINS_PER_SCHEDULE];
+    sched_entry_t schedule[ARINC653_MAX_SERVICES_PER_SCHEDULE];
 
     /**
      * This variable holds the number of entries that are valid in
@@ -216,13 +234,17 @@ static struct vcpu *find_vcpu(
  */
 static void update_schedule_vcpus(const struct scheduler *ops)
 {
-    unsigned int i, n_entries = SCHED_PRIV(ops)->num_schedule_entries;
+    unsigned int i, j, n_entries = SCHED_PRIV(ops)->num_schedule_entries;
 
     for ( i = 0; i < n_entries; i++ )
-        SCHED_PRIV(ops)->schedule[i].vc =
-            find_vcpu(ops,
-                      SCHED_PRIV(ops)->schedule[i].dom_handle,
-                      SCHED_PRIV(ops)->schedule[i].vcpu_id);
+    {
+        unsigned n_providers = SCHED_PRIV(ops)->schedule[i].num_providers;
+        for ( j = 0; j < n_providers; j++ )
+            SCHED_PRIV(ops)->schedule[i].providers[j].vc =
+                find_vcpu(ops,
+                          SCHED_PRIV(ops)->schedule[i].providers[j].dom_handle,
+                          SCHED_PRIV(ops)->schedule[i].providers[j].vcpu_id);
+    }
 }
 
 /**
@@ -243,7 +265,7 @@ arinc653_sched_set(
 {
     a653sched_priv_t *sched_priv = SCHED_PRIV(ops);
     s_time_t total_runtime = 0;
-    unsigned int i;
+    unsigned int i, j;
     unsigned long flags;
     int rc = -EINVAL;
 
@@ -252,7 +274,7 @@ arinc653_sched_set(
     /* Check for valid major frame and number of schedule entries. */
     if ( (schedule->major_frame <= 0)
          || (schedule->num_sched_entries < 1)
-         || (schedule->num_sched_entries > ARINC653_MAX_DOMAINS_PER_SCHEDULE) )
+         || (schedule->num_sched_entries > ARINC653_MAX_SERVICES_PER_SCHEDULE) )
         goto fail;
 
     for ( i = 0; i < schedule->num_sched_entries; i++ )
@@ -275,13 +297,14 @@ arinc653_sched_set(
     /* Copy the new schedule into place. */
     sched_priv->num_schedule_entries = schedule->num_sched_entries;
     sched_priv->major_frame = schedule->major_frame;
-    for ( i = 0; i < schedule->num_sched_entries; i++ )
-    {
-        memcpy(sched_priv->schedule[i].dom_handle,
-               schedule->sched_entries[i].dom_handle,
-               sizeof(sched_priv->schedule[i].dom_handle));
-        sched_priv->schedule[i].vcpu_id =
-            schedule->sched_entries[i].vcpu_id;
+    for ( i = 0; i < schedule->num_sched_entries; i++ ) {
+        for ( j = 0; j < schedule->sched_entries[i].num_providers; j++ ) {
+            memcpy(sched_priv->schedule[i].providers[j].dom_handle,
+                    schedule->sched_entries[i].service_providers[j].dom_handle,
+                    sizeof(sched_priv->schedule[i].providers[j].dom_handle));
+            sched_priv->schedule[i].providers[j].vcpu_id =
+                schedule->sched_entries[i].service_providers[j].vcpu_id;
+        }
         sched_priv->schedule[i].runtime =
             schedule->sched_entries[i].runtime;
     }
@@ -319,7 +342,7 @@ arinc653_sched_get(
     struct xen_sysctl_arinc653_schedule *schedule)
 {
     a653sched_priv_t *sched_priv = SCHED_PRIV(ops);
-    unsigned int i;
+    unsigned int i, j;
     unsigned long flags;
 
     spin_lock_irqsave(&sched_priv->lock, flags);
@@ -328,10 +351,13 @@ arinc653_sched_get(
     schedule->major_frame = sched_priv->major_frame;
     for ( i = 0; i < sched_priv->num_schedule_entries; i++ )
     {
-        memcpy(schedule->sched_entries[i].dom_handle,
-               sched_priv->schedule[i].dom_handle,
-               sizeof(sched_priv->schedule[i].dom_handle));
-        schedule->sched_entries[i].vcpu_id = sched_priv->schedule[i].vcpu_id;
+        for ( j = 0; j < sched_priv->schedule[i].num_providers; j++ ) {
+            memcpy(schedule->sched_entries[i].service_providers[j].dom_handle,
+                    sched_priv->schedule[i].providers[j].dom_handle,
+                    sizeof(sched_priv->schedule[i].providers[j].dom_handle));
+            schedule->sched_entries[i].service_providers[j].vcpu_id =
+                sched_priv->schedule[i].providers[j].vcpu_id;
+        }
         schedule->sched_entries[i].runtime = sched_priv->schedule[i].runtime;
     }
 
@@ -413,16 +439,19 @@ a653sched_alloc_vdata(const struct scheduler *ops, struct vcpu *vc, void *dd)
      * Add every one of dom0's vcpus to the schedule, as long as there are
      * slots available.
      */
+    printk("VC for domain %d\n", vc->domain->domain_id);
     if ( vc->domain->domain_id == 0 )
     {
         entry = sched_priv->num_schedule_entries;
 
-        if ( entry < ARINC653_MAX_DOMAINS_PER_SCHEDULE )
+        printk("%d/%d slot\n", entry, ARINC653_MAX_SERVICES_PER_SCHEDULE);
+        if ( entry < ARINC653_MAX_SERVICES_PER_SCHEDULE )
         {
-            sched_priv->schedule[entry].dom_handle[0] = '\0';
-            sched_priv->schedule[entry].vcpu_id = vc->vcpu_id;
+            sched_priv->schedule[entry].providers[0].dom_handle[0] = '\0';
+            sched_priv->schedule[entry].providers[0].vcpu_id = vc->vcpu_id;
+            sched_priv->schedule[entry].providers[0].vc = vc;
             sched_priv->schedule[entry].runtime = DEFAULT_TIMESLICE;
-            sched_priv->schedule[entry].vc = vc;
+            sched_priv->schedule[entry].num_providers = 1;
 
             sched_priv->major_frame += DEFAULT_TIMESLICE;
             ++sched_priv->num_schedule_entries;
@@ -479,10 +508,11 @@ a653sched_free_vdata(const struct scheduler *ops, void *priv)
 static void *
 a653sched_alloc_domdata(const struct scheduler *ops, struct domain *dom)
 {
-    /* return a non-NULL value to keep schedule.c happy */
+    a653sched_domain_t *sdom;
+
     sdom = xzalloc(a653sched_domain_t);
     if ( sdom == NULL )
-        return -ENOMEM;
+        return NULL;
 
     sdom->parent = dom->domain_id;
     sdom->primary = true;
@@ -499,9 +529,7 @@ a653sched_alloc_domdata(const struct scheduler *ops, struct domain *dom)
 static void
 a653sched_free_domdata(const struct scheduler *ops, void *data)
 {
-    dom->sched_priv = NULL;
-
-    xfree(dom->sched_priv);
+    xfree(data);
 }
 
 /**
@@ -539,6 +567,27 @@ a653sched_vcpu_wake(const struct scheduler *ops, struct vcpu *vc)
     cpu_raise_softirq(vc->processor, SCHEDULE_SOFTIRQ);
 }
 
+static sched_providers_t * providers_candidate(sched_entry_t *entry)
+{
+    int i;
+    sched_providers_t * start = entry->providers;
+    sched_providers_t * candidate = NULL;
+
+    for ( i = 0; i < entry->num_providers; i++ ) {
+        a653sched_domain_t * dom = DOM_PRIV(start[i].vc->domain);
+        /* Skip if this domain is deleted */
+        if ( dom == NULL )
+            continue;
+        /* Skip if this domain is not healthy or its predecessor have run */
+        if ( !dom->healthy )
+            continue;
+        candidate = start;
+        /* if we've got this far, break */
+        break;
+    }
+
+    return candidate;
+}
 /**
  * Xen scheduler callback function to select a VCPU to run.
  * This is the main scheduler routine.
@@ -561,10 +610,8 @@ a653sched_do_schedule(
     static unsigned int sched_index = 0;
     static s_time_t next_switch_time;
     a653sched_priv_t *sched_priv = SCHED_PRIV(ops);
+    sched_providers_t *current_provider = NULL;
     const unsigned int cpu = smp_processor_id();
-    static bool task_done[ARINC653_MAX_DOMAINS_PER_SCHEDULE] = {0}; /* task flags */
-    static a653sched_domain_t * current_domain;
-    static domid_t current_parent;
     unsigned long flags;
 
     spin_lock_irqsave(&sched_priv->lock, flags);
@@ -573,73 +620,47 @@ a653sched_do_schedule(
         sched_priv->next_major_frame = now + DEFAULT_TIMESLICE;
     else if ( now >= sched_priv->next_major_frame )
     {
+        sched_entry_t * entry;
         /* time to enter a new major frame
          * the first time this function is called, this will be true */
         /* start with the first domain in the schedule */
         sched_index = 0;
+        entry = &sched_priv->schedule[0];
         sched_priv->next_major_frame = now + sched_priv->major_frame;
-        next_switch_time = now + sched_priv->schedule[0].runtime;
-        current_domain = DOM_PRIV(sched_priv->schedule[0].vc->domain);
-        current_parent = current_domain->parent;
+        next_switch_time = now + entry->runtime;
+        current_provider = providers_candidate(entry);
 
-        /* (re)initialize task flags */
-        memset(task_done, 0, sizeof(task_done));
     }
     else
     {
-        /* if last task elapsed, mark task as done */
-        if ( now >= next_switch_time )
-            task_done[current_parent] = true;
+        sched_entry_t * entry = &sched_priv->schedule[sched_index];
 
         while ( (now >= next_switch_time)
                 && (sched_index < sched_priv->num_schedule_entries) )
         {
-            const struct vcpu * vc;
-
             /* time to switch to the next domain in this major frame */
             sched_index++;
-
-            vc = sched_priv->schedule[sched_index].vc;
-
-            /* Current schedule should point to a valid VCPU structure */
-            if (vc == NULL)
-                continue;
-
-            current_domain = DOM_PRIV(vc->domain);
-
-            /* Skip if this domain is deleted */
-            if (current_domain == NULL)
-                continue;
-
-            /* Skip if this domain is not healthy or its predecessor have run */
-            if (!current_domain->healthy || task_done[current_domain->parent])
-                continue;
-
-            /* Select current schedule entry */
-            next_switch_time += sched_priv->schedule[sched_index].runtime;
-            current_parent = current_domain->parent;
-
-            /* if we've got this far, break */
-            break;
+            entry = &sched_priv->schedule[sched_index];
+            next_switch_time += entry->runtime;
         }
+
+        /* Choose the most appropriate provider for current entry */
+        current_provider = providers_candidate(entry);
     }
 
+    if (current_provider != NULL)
+        new_task = current_provider->vc;
     /*
      * If we exhausted the domains in the schedule and still have time left
-     * in the major frame then switch next at the next major frame.
+     * in the major frame then switch next at the next major frame with
+     * idle vcpu.
      */
     if ( sched_index >= sched_priv->num_schedule_entries )
+    {
         next_switch_time = sched_priv->next_major_frame;
+        new_task = IDLETASK(cpu);
+    }
 
-    /*
-     * If there are more domains to run in the current major frame, set
-     * new_task equal to the address of next domain's VCPU structure.
-     * Otherwise, set new_task equal to the address of the idle task's VCPU
-     * structure.
-     */
-    new_task = (sched_index < sched_priv->num_schedule_entries)
-        ? sched_priv->schedule[sched_index].vc
-        : IDLETASK(cpu);
 
     /* Check to see if the new task can be run (awake & runnable). */
     if ( !((new_task != NULL)
@@ -788,6 +809,10 @@ a653sched_init_domain(const struct scheduler *ops,
 
     printk("New domain [%d]\n", dom->domain_id);
     sdom = a653sched_alloc_domdata(ops, dom);
+
+    if ( sdom == NULL )
+        return -ENOMEM;
+
     dom->sched_priv = sdom;
 
     return 0;
@@ -796,7 +821,9 @@ a653sched_init_domain(const struct scheduler *ops,
 static void
 a653sched_destroy_domain(const struct scheduler *ops, struct domain *dom)
 {
-    a653sched_free_domdata(ops, dom);
+    a653sched_free_domdata(ops, dom->sched_priv);
+
+    dom->sched_priv = NULL;
 }
 
 static int
