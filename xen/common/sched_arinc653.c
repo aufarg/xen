@@ -305,6 +305,8 @@ arinc653_sched_set(
             sched_priv->schedule[i].providers[j].vcpu_id =
                 schedule->sched_entries[i].service_providers[j].vcpu_id;
         }
+        sched_priv->schedule[i].service_id =
+            schedule->sched_entries[i].service_id;
         sched_priv->schedule[i].runtime =
             schedule->sched_entries[i].runtime;
     }
