@@ -595,8 +595,8 @@ DEFINE_XEN_GUEST_HANDLE(xen_sysctl_cpupool_op_t);
  * all the operations.
  */
 
-#define ARINC653_MAX_DOMAINS_PER_SERVICE     64
-#define ARINC653_MAX_SERVICES_PER_SCHEDULE   64
+#define ARINC653_MAX_DOMAINS_PER_SERVICE     4
+#define ARINC653_MAX_SERVICES_PER_SCHEDULE   16
 /*
  * This structure is used to pass a new ARINC653 schedule from a
  * privileged domain (ie dom0) to Xen.

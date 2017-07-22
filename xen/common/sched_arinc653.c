@@ -236,14 +236,20 @@ static void update_schedule_vcpus(const struct scheduler *ops)
 {
     unsigned int i, j, n_entries = SCHED_PRIV(ops)->num_schedule_entries;
 
+    printk("Update Schedule VCPUS, n_entries = %d\n", n_entries);
     for ( i = 0; i < n_entries; i++ )
     {
-        unsigned n_providers = SCHED_PRIV(ops)->schedule[i].num_providers;
+        unsigned int n_providers = SCHED_PRIV(ops)->schedule[i].num_providers;
+        printk("entry %d has %d providers\n", i, n_providers);
         for ( j = 0; j < n_providers; j++ )
+        {
             SCHED_PRIV(ops)->schedule[i].providers[j].vc =
                 find_vcpu(ops,
                           SCHED_PRIV(ops)->schedule[i].providers[j].dom_handle,
                           SCHED_PRIV(ops)->schedule[i].providers[j].vcpu_id);
+            printk("entry = %d,%d -> vc pointer %p\n", i, j,
+                    SCHED_PRIV(ops)->schedule[i].providers[j].vc);
+        }
     }
 }
 
@@ -278,6 +284,11 @@ arinc653_sched_set(
         goto fail;
 
     for ( i = 0; i < schedule->num_sched_entries; i++ )
+        if ( (schedule->sched_entries[i].num_providers < 1)
+             || (schedule->sched_entries[i].num_providers > ARINC653_MAX_DOMAINS_PER_SERVICE) )
+            goto fail;
+
+    for ( i = 0; i < schedule->num_sched_entries; i++ )
     {
         /* Check for a valid run time. */
         if ( schedule->sched_entries[i].runtime <= 0 )
@@ -297,20 +308,37 @@ arinc653_sched_set(
     /* Copy the new schedule into place. */
     sched_priv->num_schedule_entries = schedule->num_sched_entries;
     sched_priv->major_frame = schedule->major_frame;
-    for ( i = 0; i < schedule->num_sched_entries; i++ ) {
-        for ( j = 0; j < schedule->sched_entries[i].num_providers; j++ ) {
+    for ( i = 0; i < schedule->num_sched_entries; i++ )
+    {
+        for ( j = 0; j < schedule->sched_entries[i].num_providers; j++ )
+        {
             memcpy(sched_priv->schedule[i].providers[j].dom_handle,
                     schedule->sched_entries[i].service_providers[j].dom_handle,
                     sizeof(sched_priv->schedule[i].providers[j].dom_handle));
             sched_priv->schedule[i].providers[j].vcpu_id =
                 schedule->sched_entries[i].service_providers[j].vcpu_id;
+
+            printk("entry = %d,%d vcpu id = %d\n", i, j,
+                    sched_priv->schedule[i].providers[j].vcpu_id);
         }
         sched_priv->schedule[i].service_id =
             schedule->sched_entries[i].service_id;
         sched_priv->schedule[i].runtime =
             schedule->sched_entries[i].runtime;
+        sched_priv->schedule[i].num_providers =
+            schedule->sched_entries[i].num_providers;
     }
     update_schedule_vcpus(ops);
+
+    for ( i = 0; i < sched_priv->num_schedule_entries; i++ )
+    {
+        for ( j = 0; j < sched_priv->schedule[i].num_providers; j++ )
+        {
+            printk("entry = %d,%d vc = %p, dom = %d\n", i, j,
+                    sched_priv->schedule[i].providers[j].vc,
+                    sched_priv->schedule[i].providers[j].vc->domain->domain_id);
+        }
+    }
 
     /*
      * The newly-installed schedule takes effect immediately. We do not even
@@ -353,7 +381,8 @@ arinc653_sched_get(
     schedule->major_frame = sched_priv->major_frame;
     for ( i = 0; i < sched_priv->num_schedule_entries; i++ )
     {
-        for ( j = 0; j < sched_priv->schedule[i].num_providers; j++ ) {
+        for ( j = 0; j < sched_priv->schedule[i].num_providers; j++ )
+        {
             memcpy(schedule->sched_entries[i].service_providers[j].dom_handle,
                     sched_priv->schedule[i].providers[j].dom_handle,
                     sizeof(sched_priv->schedule[i].providers[j].dom_handle));
@@ -441,12 +470,10 @@ a653sched_alloc_vdata(const struct scheduler *ops, struct vcpu *vc, void *dd)
      * Add every one of dom0's vcpus to the schedule, as long as there are
      * slots available.
      */
-    printk("VC for domain %d\n", vc->domain->domain_id);
     if ( vc->domain->domain_id == 0 )
     {
         entry = sched_priv->num_schedule_entries;
 
-        printk("%d/%d slot\n", entry, ARINC653_MAX_SERVICES_PER_SCHEDULE);
         if ( entry < ARINC653_MAX_SERVICES_PER_SCHEDULE )
         {
             sched_priv->schedule[entry].providers[0].dom_handle[0] = '\0';
@@ -575,7 +602,8 @@ static sched_providers_t * providers_candidate(sched_entry_t *entry)
     sched_providers_t * start = entry->providers;
     sched_providers_t * candidate = NULL;
 
-    for ( i = 0; i < entry->num_providers; i++ ) {
+    for ( i = 0; i < entry->num_providers; i++ )
+    {
         a653sched_domain_t * dom = DOM_PRIV(start[i].vc->domain);
         /* Skip if this domain is deleted */
         if ( dom == NULL )
@@ -583,7 +611,7 @@ static sched_providers_t * providers_candidate(sched_entry_t *entry)
         /* Skip if this domain is not healthy or its predecessor have run */
         if ( !dom->healthy )
             continue;
-        candidate = start;
+        candidate = &start[i];
         /* if we've got this far, break */
         break;
     }
@@ -611,8 +639,8 @@ a653sched_do_schedule(
     struct vcpu * new_task = NULL;
     static unsigned int sched_index = 0;
     static s_time_t next_switch_time;
-    a653sched_priv_t *sched_priv = SCHED_PRIV(ops);
-    sched_providers_t *current_provider = NULL;
+    a653sched_priv_t * sched_priv = SCHED_PRIV(ops);
+    sched_providers_t * current_provider = NULL;
     const unsigned int cpu = smp_processor_id();
     unsigned long flags;
 
@@ -650,7 +678,7 @@ a653sched_do_schedule(
         current_provider = providers_candidate(entry);
     }
 
-    if (current_provider != NULL)
+    if ( current_provider != NULL )
         new_task = current_provider->vc;
     /*
      * If we exhausted the domains in the schedule and still have time left
