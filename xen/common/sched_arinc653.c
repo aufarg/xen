@@ -236,20 +236,15 @@ static void update_schedule_vcpus(const struct scheduler *ops)
 {
     unsigned int i, j, n_entries = SCHED_PRIV(ops)->num_schedule_entries;
 
-    printk("Update Schedule VCPUS, n_entries = %d\n", n_entries);
     for ( i = 0; i < n_entries; i++ )
     {
         unsigned int n_providers = SCHED_PRIV(ops)->schedule[i].num_providers;
-        printk("entry %d has %d providers\n", i, n_providers);
         for ( j = 0; j < n_providers; j++ )
-        {
             SCHED_PRIV(ops)->schedule[i].providers[j].vc =
                 find_vcpu(ops,
                           SCHED_PRIV(ops)->schedule[i].providers[j].dom_handle,
                           SCHED_PRIV(ops)->schedule[i].providers[j].vcpu_id);
-            printk("entry = %d,%d -> vc pointer %p\n", i, j,
                     SCHED_PRIV(ops)->schedule[i].providers[j].vc);
-        }
     }
 }
 
@@ -318,8 +313,6 @@ arinc653_sched_set(
             sched_priv->schedule[i].providers[j].vcpu_id =
                 schedule->sched_entries[i].service_providers[j].vcpu_id;
 
-            printk("entry = %d,%d vcpu id = %d\n", i, j,
-                    sched_priv->schedule[i].providers[j].vcpu_id);
         }
         sched_priv->schedule[i].service_id =
             schedule->sched_entries[i].service_id;
@@ -329,16 +322,6 @@ arinc653_sched_set(
             schedule->sched_entries[i].num_providers;
     }
     update_schedule_vcpus(ops);
-
-    for ( i = 0; i < sched_priv->num_schedule_entries; i++ )
-    {
-        for ( j = 0; j < sched_priv->schedule[i].num_providers; j++ )
-        {
-            printk("entry = %d,%d vc = %p, dom = %d\n", i, j,
-                    sched_priv->schedule[i].providers[j].vc,
-                    sched_priv->schedule[i].providers[j].vc->domain->domain_id);
-        }
-    }
 
     /*
      * The newly-installed schedule takes effect immediately. We do not even
