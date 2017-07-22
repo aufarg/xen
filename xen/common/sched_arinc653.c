@@ -244,7 +244,6 @@ static void update_schedule_vcpus(const struct scheduler *ops)
                 find_vcpu(ops,
                           SCHED_PRIV(ops)->schedule[i].providers[j].dom_handle,
                           SCHED_PRIV(ops)->schedule[i].providers[j].vcpu_id);
-                    SCHED_PRIV(ops)->schedule[i].providers[j].vc);
     }
 }
 
@@ -425,30 +424,23 @@ a653sched_deinit(struct scheduler *ops)
 }
 
 /**
- * This function allocates scheduler-specific data for a VCPU
+ * This function inserts VCPU to scheduler list of VCPU
  *
  * @param ops       Pointer to this instance of the scheduler structure
- *
- * @return          Pointer to the allocated data
+ * @param vc        Pointer to the VCPU structure for the current domain
  */
-static void *
-a653sched_alloc_vdata(const struct scheduler *ops, struct vcpu *vc, void *dd)
+static void
+a653sched_insert_vcpu(const struct scheduler *ops, struct vcpu *vc)
 {
+
     a653sched_priv_t *sched_priv = SCHED_PRIV(ops);
-    arinc653_vcpu_t *svc;
+    arinc653_vcpu_t *svc = vc->sched_priv;
     unsigned int entry;
     unsigned long flags;
 
-    /*
-     * Allocate memory for the ARINC 653-specific scheduler data information
-     * associated with the given VCPU (vc).
-     */
-    svc = xmalloc(arinc653_vcpu_t);
-    if ( svc == NULL )
-        return NULL;
-
     spin_lock_irqsave(&sched_priv->lock, flags);
 
+    ASSERT (!is_idle_vcpu(vc));
     /* 
      * Add every one of dom0's vcpus to the schedule, as long as there are
      * slots available.
@@ -469,6 +461,58 @@ a653sched_alloc_vdata(const struct scheduler *ops, struct vcpu *vc, void *dd)
             ++sched_priv->num_schedule_entries;
         }
     }
+    list_add(&svc->list, &SCHED_PRIV(ops)->vcpu_list);
+    update_schedule_vcpus(ops);
+
+    spin_unlock_irqrestore(&sched_priv->lock, flags);
+}
+
+/**
+ * This function removes VCPU from scheduler list of VCPU
+ *
+ * @param ops       Pointer to this instance of the scheduler structure
+ * @param vc        Pointer to the VCPU structure for the current domain
+ */
+static void
+a653sched_remove_vcpu(const struct scheduler *ops, struct vcpu *vc)
+{
+
+    a653sched_priv_t *sched_priv = SCHED_PRIV(ops);
+    arinc653_vcpu_t *svc = vc->sched_priv;
+    unsigned long flags;
+
+    spin_lock_irqsave(&sched_priv->lock, flags);
+
+    ASSERT (!is_idle_vcpu(vc));
+    list_del(&svc->list);
+    update_schedule_vcpus(ops);
+
+    spin_unlock_irqrestore(&sched_priv->lock, flags);
+}
+
+/**
+ * This function allocates scheduler-specific data for a VCPU
+ *
+ * @param ops       Pointer to this instance of the scheduler structure
+ *
+ * @return          Pointer to the allocated data
+ */
+static void *
+a653sched_alloc_vdata(const struct scheduler *ops, struct vcpu *vc, void *dd)
+{
+    a653sched_priv_t *sched_priv = SCHED_PRIV(ops);
+    arinc653_vcpu_t *svc;
+    unsigned long flags;
+
+    /*
+     * Allocate memory for the ARINC 653-specific scheduler data information
+     * associated with the given VCPU (vc).
+     */
+    svc = xmalloc(arinc653_vcpu_t);
+    if ( svc == NULL )
+        return NULL;
+
+    spin_lock_irqsave(&sched_priv->lock, flags);
 
     /*
      * Initialize our ARINC 653 scheduler-specific information for the VCPU.
@@ -478,9 +522,6 @@ a653sched_alloc_vdata(const struct scheduler *ops, struct vcpu *vc, void *dd)
      */
     svc->vc = vc;
     svc->awake = 0;
-    if ( !is_idle_vcpu(vc) )
-        list_add(&svc->list, &SCHED_PRIV(ops)->vcpu_list);
-    update_schedule_vcpus(ops);
 
     spin_unlock_irqrestore(&sched_priv->lock, flags);
 
@@ -496,15 +537,7 @@ static void
 a653sched_free_vdata(const struct scheduler *ops, void *priv)
 {
     arinc653_vcpu_t *av = priv;
-
-    if (av == NULL)
-        return;
-
-    if ( !is_idle_vcpu(av->vc) )
-        list_del(&av->list);
-
     xfree(av);
-    update_schedule_vcpus(ops);
 }
 
 /**
@@ -587,8 +620,14 @@ static sched_providers_t * providers_candidate(sched_entry_t *entry)
 
     for ( i = 0; i < entry->num_providers; i++ )
     {
-        a653sched_domain_t * dom = DOM_PRIV(start[i].vc->domain);
+        struct vcpu * vc;
+        a653sched_domain_t * dom;
+
         /* Skip if this domain is deleted */
+        vc = start[i].vc;
+        if ( vc == NULL )
+            continue;
+        dom = DOM_PRIV(vc->domain);
         if ( dom == NULL )
             continue;
         /* Skip if this domain is not healthy or its predecessor have run */
@@ -897,8 +936,8 @@ static const struct scheduler sched_arinc653_def = {
     .init_domain    = a653sched_init_domain,
     .destroy_domain = a653sched_destroy_domain,
 
-    .insert_vcpu    = NULL,
-    .remove_vcpu    = NULL,
+    .insert_vcpu    = a653sched_insert_vcpu,
+    .remove_vcpu    = a653sched_remove_vcpu,
 
     .sleep          = a653sched_vcpu_sleep,
     .wake           = a653sched_vcpu_wake,
