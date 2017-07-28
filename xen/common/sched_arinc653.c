@@ -661,6 +661,7 @@ a653sched_do_schedule(
     struct vcpu * new_task = NULL;
     static unsigned int sched_index = 0;
     static s_time_t next_switch_time;
+    static sched_entry_t * entry;
     a653sched_priv_t * sched_priv = SCHED_PRIV(ops);
     sched_providers_t * current_provider = NULL;
     const unsigned int cpu = smp_processor_id();
@@ -672,27 +673,29 @@ a653sched_do_schedule(
         sched_priv->next_major_frame = now + DEFAULT_TIMESLICE;
     else if ( now >= sched_priv->next_major_frame )
     {
-        sched_entry_t * entry;
+        s_time_t start_time;
+
         /* time to enter a new major frame
          * the first time this function is called, this will be true */
         /* start with the first domain in the schedule */
         sched_index = 0;
-        entry = &sched_priv->schedule[0];
-        sched_priv->next_major_frame = now + sched_priv->major_frame;
-        next_switch_time = now + entry->runtime;
+        entry = sched_priv->schedule;
+
+        start_time = sched_priv->next_major_frame;
+        sched_priv->next_major_frame = start_time + sched_priv->major_frame;
+        next_switch_time = start_time + entry->runtime;
+
         current_provider = providers_candidate(entry);
 
     }
     else
     {
-        sched_entry_t * entry = &sched_priv->schedule[sched_index];
-
         while ( (now >= next_switch_time)
                 && (sched_index < sched_priv->num_schedule_entries) )
         {
             /* time to switch to the next domain in this major frame */
             sched_index++;
-            entry = &sched_priv->schedule[sched_index];
+            entry = sched_priv->schedule + sched_index;
             next_switch_time += entry->runtime;
         }
 
