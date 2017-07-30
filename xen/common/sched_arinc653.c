@@ -746,11 +746,9 @@ a653sched_do_schedule(
      * Return the amount of time the next domain has to run and the address
      * of the selected task's VCPU structure.
      */
-    ret.migrated = 0;
-    ret.task = new_task;
     ret.time = next_switch_time - now;
-    printk("switch = %ld, now = %ld, NOW() = %ld, diff %ld\n",
-            next_switch_time, now, NOW(), next_switch_time - NOW());
+    ret.task = new_task;
+    ret.migrated = 0;
 
     BUG_ON(ret.time <= 0);
 
