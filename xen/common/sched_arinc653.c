@@ -749,7 +749,8 @@ a653sched_do_schedule(
     ret.migrated = 0;
     ret.task = new_task;
     ret.time = next_switch_time - now;
-    printk("%lu\n", next_switch_time - NOW());
+    printk("switch = %ld, now = %ld, NOW() = %ld, diff %ld\n",
+            next_switch_time, now, NOW(), next_switch_time - NOW());
 
     BUG_ON(ret.time <= 0);
 
